@@ -132,3 +132,7 @@ dmypy.json
 environment
 .vscode
 CW_data
+
+*.caffemodel
+*.prototxt
+*.yaml
