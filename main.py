@@ -1,5 +1,6 @@
 import random
 import yaml
+import csv
 
 from time import sleep
 from os import listdir
@@ -8,24 +9,23 @@ from os.path import join
 import cv2
 import numpy as np
 from matplotlib import pyplot
+from scipy import stats
+from sklearn.preprocessing import MinMaxScaler
 
-from preparations import prepare, get_contour, get_person_height, display_sidebyside, display_together
+from preparations import prepare, display_sidebyside
 
-def get_test_image_names(orientation = 'f'):# 's' - side, 'f' - front view
+def get_test_image_names():
     test_folder = "./CW_data/test"
 
     filenames = []
-    a=False
     for file in listdir(test_folder):
-        a = not a
-        if a:
-            continue
-        else:
+        # if 'person' not in file:
+        if ('person' not in file and int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG':
             filenames.append(file)
 
     return [ join(test_folder, filename) for filename in filenames]
 
-def import_features(import_filename='features.yaml'):
+def import_features(import_filename='features_training.yaml'):
 
     features_data = {}
 
@@ -37,105 +37,114 @@ def import_features(import_filename='features.yaml'):
 def identify():
     features_data = import_features()
 
-    a = cv2.imread('./CW_data/training/021z005pf.jpg')
-    b = cv2.imread('./CW_data/test/DSC00174.JPG')
+    #get correct matches
+    answers = {}
+    with open('test-training_map.txt', mode='r') as csv_file:
+        csv_reader = csv.DictReader(csv_file)
+        for row in csv_reader:
+            answers[row['test']] = row['training']
 
-    display_together([a,b], title='aaaa')
-    display_sidebyside([a,b], title='bbb')
-    cv2.waitKey(00)
-
-    human_data = []
-    img_names = get_test_image_names()
-
-    images = []
-    for img_name in img_names:
-        img = cv2.imread(img_name, cv2.IMREAD_COLOR)
-        imgBil = cv2.bilateralFilter(img, 9, 75, 75)
-        #display_sidebyside([img, imgMed, imgBil], title=img_name)
-
-        images.append(imgBil)
-
-        human_data.append( {'name':img_name, 'initial_img':imgBil} )
-
-    humans_thredmills = human_treadmill_extraction(images)
-    for i in range(len(human_data)):
-        human_data[i] = {**human_data[i], **{'foreground':humans_thredmills[i]}}
-
-    shapes, contours = get_contours(humans_thredmills)
-    for i in range(len(human_data)):
-        human_data[i] = {**human_data[i], **{'shape':shapes[i], 'contour':contours[i]}}
-
-
-    heights = get_total_heights(contours)
-    for i in range(len(human_data)):
-        human_data[i] = {**human_data[i], **{'total_height':heights[i]}}
-
-
-
-    for _, height in features_data.items():
-        pyplot.scatter(height,[5])
-
-    newcomer = (human_data[0]['name'], human_data[0]['total_height'])
-    pyplot.scatter(newcomer[1],[4])
-
-    #for human in human_data:
-    #    pyplot.scatter(human['total_height'],[4],marker='4')
-
+    # human_data = prepare(get_test_image_names(), 'features_test.yaml')
+    human_data = import_features('features_test.yaml')
 
     knn = cv2.ml.KNearest_create()
 
-    trainData = np.empty((len(features_data),1),dtype=np.float32)
+    trainData = np.empty((len(features_data),(len(features_data[0])-1)*2 - 1  ),dtype=np.float32) #-1 for 'name', *2 for tuples, -1 for 'height'
     i=0
-    for v in features_data.values():
-        trainData[i][0] = v
+    for d in features_data:
+        fj=0
+        for name, value in d.items():#wrongly assuming dict items() order is consistent
+            print (name)
+            if name == 'name':
+                continue
+            #elif name == 'hip_width':
+            #    continue
+            elif type(value) == int:
+                trainData[i][fj] = value
+                fj += 1
+            else:
+                for v in value:
+                    trainData[i][fj] = v
+                    fj += 1
         i+=1
+    #trainDataNorm = stats.zscore(trainData)
+
+    scaler = MinMaxScaler()
+    scaler.fit(trainData)
+
+    trainDataNorm = scaler.transform(trainData)
+    # trainDataNorm = trainData
+
 
     responses = np.empty((len(features_data),1),dtype=np.float32)
     for i in range(len(features_data)):
         responses[i][0] = i
 
-    knn.train(trainData, cv2.ml.ROW_SAMPLE, responses )
-    #knn.train(np.array([ h for h in features_data.values() ]), cv2.ml.ROW_SAMPLE, np.array([ n for n in features_data ]) )
-    new = np.empty((1,1), dtype=np.float32)
-    new[0] = newcomer[1]
-    ret, results, neighbours, dist = knn.findNearest( new, 8)
-    print( "result:  {}\n".format(results) )
-    print( "neighbours:  {}\n".format(neighbours) )
-    print ( list(features_data)[int(neighbours.item(0))] )
-    print ( newcomer[0] )
-    print( "distance:  {}\n".format(dist) )
+    knn.train(trainDataNorm, cv2.ml.ROW_SAMPLE, responses)
+
+    correct_guess = 0
+    i = 1
+    for human in human_data:
+        if 'contour' in human:
+            del human['contour']
+            del human['initial_img']
+            del human['person_img']
+
+        print ("")
+        new = np.empty((1,trainData.shape[1] ),dtype=np.float32)
+        fj = 0
+        for name, value in human.items():#wrongly assuming dict items() order is consistent
+            print (name)
+            if name == 'name':
+                continue
+            elif name == 'hip_width':
+                continue
+            elif type(value) == int:
+                new[0][fj] = value
+                fj += 1
+            else:
+                for v in value:
+                    new[0][fj] = v
+                    fj += 1
+
+        #normalize 'new'
+        # st_devs = np.std(trainData, axis=0)
+        # avgs = np.mean(trainData, axis=0)
+        newNorm = np.empty((1,trainData.shape[1]),dtype=np.float32)
+        # for j in range(len(new[0])):
+        #     newNorm[0, j] = (new[0, j] - avgs[j]) / st_devs[j]
+
+        for j in range(len(new[0])):
+            newNorm[0, j] = (new[0, j] - min(trainData[:, j])) / (max(trainData[:, j]) - min(trainData[:, j]))
+
+        # newNorm = new
+        ret, results, neighbours, dist = knn.findNearest( newNorm, 3)
+        print( "result:  {}\n".format(results) )
+        print( "neighbours:  {}\n".format(neighbours) )
+        for nei in neighbours[0]:
+            print ( list(features_data)[int(nei)] )
+        print ("")
+        print ( "human:", human )
+        print( "distance:  {}\n".format(dist) )
+
+        correct_answer = answers[ human['name'].split('/')[-1] ]
+        if correct_answer == features_data[int(neighbours[0, 0])]['name'].split('/')[-1]:
+            print (f"{i}. YES")
+            correct_guess += 1
 
 
-    img_training = [ cv2.imread( list(features_data)[int(n)], cv2.IMREAD_COLOR) for n in neighbours[0] ]
-    img_test = cv2.imread(newcomer[0] , cv2.IMREAD_COLOR )
-    display_sidebyside([img_test] + img_training, title='t')
+        img_training = [ cv2.imread( list(features_data)[int(n)]['name'], cv2.IMREAD_COLOR) for n in neighbours[0] ]
+        img_test = cv2.imread(human['name'] , cv2.IMREAD_COLOR )
+        # display_sidebyside([img_test] + img_training, title='t', wait=True)
 
-    #pyplot.show()
+        i+=1
 
-    while True:
-        cv2.waitKey(0)
-
+    print ("Number of correct answers:",correct_guess, "Out of:", len(human_data))
 
 def main():
-    prepare()
+    #prepare()
 
-    #identify()
-
-
-#canny_threshold_identifier(humans_thredmills)
-
-#display_together(images, 'initial')
-
-#aligned_images = align_images(images)
-
-#display_img(aligned_images[0], title='0')
-#display_img(aligned_images[1], title='1')
-
-#bg = display_together(aligned_images, 'alligned')
-
-#get_background(images)
-#fgMask = get_fg_mask(aligned_images, bg)
-#display_img(fgMask)
+    identify()
 
 
 if __name__ == "__main__":
