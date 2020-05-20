@@ -118,7 +118,7 @@ def get_pose(img):
     Reworked from https://github.com/legolas123/cv-tricks.com/blob/master/OpenCV/Pose_Estimation/run_pose.py
 
     Arguments:
-        img {[type]} -- person image
+        img {[type]} -- person imageget_person_height
 
     Returns:
         [type] -- [description]
@@ -266,7 +266,8 @@ def get_pose(img):
 
 def get_measurements(initial_img, contour_img, contour, body_parts):
 
-    height = get_person_height(contour)
+    # height = get_person_height(contour)
+    height = contour_img.shape[0]
     shoulder_width = get_shoulder_width(contour_img, body_parts)
     neck_width = get_neck_width(contour_img, body_parts)
     hip_width = get_hip_width(contour_img, body_parts)
