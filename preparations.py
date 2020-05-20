@@ -6,6 +6,7 @@ import math
 from time import sleep
 from os import listdir
 from os.path import join, exists
+from statistics import mean
 
 
 import cv2
@@ -15,6 +16,7 @@ from PIL import Image
 from matplotlib import pyplot
 from torchvision import transforms
 from torchvision.utils import save_image
+from sklearn import preprocessing
 
 
 
@@ -23,8 +25,8 @@ def get_training_image_names(orientation = 's'):# 's' - side, 'f' - front view
 
     filenames = []
     for file in listdir(training_folder):
-        # if orientation in file and 'person' not in file:
-        if 'person' not in file:
+        if orientation in file and 'person' not in file:
+        # if 'person' not in file:
             filenames.append(file)
 
     return [ join(training_folder, filename) for filename in filenames]
@@ -95,7 +97,7 @@ def get_contour(person_mask):
     if len(person_mask.shape) > 2:
         person_mask = cv2.cvtColor(person_mask, cv2.COLOR_BGR2GRAY)
         ret,person_mask = cv2.threshold(person_mask,127,255,cv2.THRESH_BINARY)
-    contour_thres, _ = cv2.findContours(person_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    contour_thres, _ = cv2.findContours(person_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_NONE)
 
     contours = []
     mx_contour = None
@@ -462,7 +464,7 @@ def get_head_width(contour_img, body_parts, orientation):
 
     return (max_head_width, my)
 
-def get_widths(contour,img):
+def get_left_right_side(contour,img):
     contour = contour[0]
 
     # h_i = -1
@@ -494,15 +496,39 @@ def get_widths(contour,img):
             r_i = i
     right_side = contour[r_i:]
 
-
-    # cv2.line(img, (0,highest_y), (3000,highest_y), 122, 3)
-    # display_img(img, wait=True)
-
     left_contour_img = np.zeros(img.shape, np.uint8)
     right_contour_img = np.zeros(img.shape, np.uint8)
-    cv2.drawContours(left_contour_img, left_side, -1, (255,255,255), 5)
-    cv2.drawContours(right_contour_img, right_side, -1, (255,255,255), 5)
-    #display_sidebyside([left_contour_img, right_contour_img], title='left/right', wait=True)
+    cv2.drawContours(left_contour_img, left_side, -1, (255), 2)
+    cv2.drawContours(right_contour_img, right_side, -1, (255), 2)
+    # display_sidebyside([left_contour_img, right_contour_img], title='left/right', wait=True)
+
+    return left_side, right_side
+
+def get_wavelet(contour):
+    top = contour[0].item(1)
+    bottom = contour[-1].item(1)
+
+    dic = {}
+    for dot in contour:
+        if dot.item(1) in dic:
+            dic[dot.item(1)].append(dot.item(0))
+        else:
+            dic[dot.item(1)] = [dot.item(0)]
+
+    graph = np.empty((1, top - bottom +1), dtype=np.float)
+    i = 0
+    for k,values in sorted(dic.items()):
+        graph[0][i] = mean(values)
+        i+=1
+
+    # scaler = preprocessing.MinMaxScaler()
+    scaler = preprocessing.StandardScaler()
+    # scaler = preprocessing.RobustScaler()
+
+    scaler.fit(graph.transpose())
+    graphNorm = scaler.transform(graph.transpose())
+
+    return graphNorm
 
 def display_together(imgs, title='img', wait=False):
 
@@ -580,9 +606,15 @@ def prepare(img_names, export_filename=None):
 
         orientation = get_orientation(body_parts)
 
-        measurements = get_measurements(person_mask, body_parts, orientation)
-        # display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR) , fg], wait=True)
+        mes_dots_drawing = person_mask.copy()
+        measurements = get_measurements(mes_dots_drawing, body_parts, orientation)
+        # display_sidebyside([initial_img, cv2.cvtColor(mes_dots_drawing, cv2.COLOR_GRAY2BGR) , fg], wait=True)
 
+        #get contour again - update it due to cropping
+        contour = get_contour(person_mask)
+        left_side, right_side = get_left_right_side(contour, person_mask)
+
+        wavelet = get_wavelet(right_side)
 
         data = {
             'name':img_name,

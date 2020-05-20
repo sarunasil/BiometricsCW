@@ -80,19 +80,9 @@ def knn_features_side(acc, i ,d):
                 fj += 1
 
 
-def identify():
-    features_data = import_features()
+def load_knn_models(features_data):
 
-    answers = {}
-    with open('test-training_map.txt', mode='r') as csv_file:
-        csv_reader = csv.DictReader(csv_file)
-        for row in csv_reader:
-            answers[row['test']] = row['training']
-
-    # human_data = prepare(get_test_image_names(), 'features_test.yaml')
-    human_data = import_features('features_test.yaml')
-
-# start front knn
+    # start front knn
     knn_front = cv2.ml.KNearest_create()
     trainDataFront = np.zeros((int(len(features_data)/2), len(features_data[0])*2  ),dtype=np.float32)
     i=0
@@ -117,9 +107,9 @@ def identify():
             index += 1
 
     knn_front.train(trainDataFrontNorm, cv2.ml.ROW_SAMPLE, responses_front)
-# end front knn
+    # end front knn
 
-# start side knn
+    # start side knn
     knn_side = cv2.ml.KNearest_create()
     trainDataSide = np.zeros((int(len(features_data)/2), len(features_data[0])*2),dtype=np.float32)
     i=0
@@ -144,7 +134,23 @@ def identify():
             index += 1
 
     knn_side.train(trainDataSideNorm, cv2.ml.ROW_SAMPLE, responses_side)
-# end side knn
+    # end side knn
+
+    return knn_front, knn_side, scaler_front, scaler_side
+
+def identify():
+    features_data = import_features()
+
+    # human_data = prepare(get_test_image_names(), 'features_test.yaml')
+    human_data = import_features('features_test.yaml')
+
+    knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
+
+    answers = {}
+    with open('test-training_map.txt', mode='r') as csv_file:
+        csv_reader = csv.DictReader(csv_file)
+        for row in csv_reader:
+            answers[row['test']] = row['training']
 
     correct_guesses = []
     i = 1
@@ -154,16 +160,13 @@ def identify():
             del human['initial_img']
             del human['person_mask']
 
+        new = np.zeros((1,len(features_data[0])*2),dtype=np.float32)
         if human['orientation'] == 'f':
-            new = np.zeros((1,trainDataFront.shape[1] ),dtype=np.float32)
-
             knn_features_front(new, 0, human)
 
             newNorm = scaler_front.transform(new)
             ret, results, neighbours, dist = knn_front.findNearest( newNorm, 3)
         else:
-            new = np.zeros((1,trainDataSide.shape[1] ),dtype=np.float32)
-
             knn_features_side(new, 0, human)
 
             newNorm = scaler_side.transform(new)
@@ -185,8 +188,8 @@ def identify():
             print (f"{i}. NO")
 
 
-        img_training = [ cv2.imread( list(features_data)[int(n)]['name'], cv2.IMREAD_COLOR) for n in neighbours[0] ]
-        img_test = cv2.imread(human['name'] , cv2.IMREAD_COLOR )
+        # img_training = [ cv2.imread( list(features_data)[int(n)]['name'], cv2.IMREAD_COLOR) for n in neighbours[0] ]
+        # img_test = cv2.imread(human['name'] , cv2.IMREAD_COLOR )
         # display_sidebyside([img_test] + img_training, title='t '+str(i), wait=True)
 
         i+=1
