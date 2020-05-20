@@ -1,10 +1,12 @@
 
 import random
 import yaml
+import math
 
 from time import sleep
 from os import listdir
 from os.path import join, exists
+
 
 import cv2
 import torch
@@ -16,13 +18,13 @@ from torchvision.utils import save_image
 
 
 
-def get_training_image_names(orientation = 'f'):# 's' - side, 'f' - front view
+def get_training_image_names(orientation = 's'):# 's' - side, 'f' - front view
     training_folder = "./CW_data/training"
 
     filenames = []
     for file in listdir(training_folder):
-        if orientation in file and 'person' not in file:
-        # if 'person' not in file:
+        # if orientation in file and 'person' not in file:
+        if 'person' not in file:
             filenames.append(file)
 
     return [ join(training_folder, filename) for filename in filenames]
@@ -88,12 +90,12 @@ def get_person(filename):
     ret,thresh1 = cv2.threshold( cv2.cvtColor(np.asarray(r), cv2.COLOR_RGB2GRAY) ,127,255,cv2.THRESH_BINARY)
     return cv2.cvtColor(np.asarray(input_image), cv2.COLOR_RGB2BGR), thresh1
 
-def get_contour(person_img):
+def get_contour(person_mask):
 
-    if len(person_img.shape) > 2:
-        person_img = cv2.cvtColor(person_img, cv2.COLOR_BGR2GRAY)
-        ret,person_img = cv2.threshold(person_img,127,255,cv2.THRESH_BINARY)
-    contour_thres, _ = cv2.findContours(person_img, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    if len(person_mask.shape) > 2:
+        person_mask = cv2.cvtColor(person_mask, cv2.COLOR_BGR2GRAY)
+        ret,person_mask = cv2.threshold(person_mask,127,255,cv2.THRESH_BINARY)
+    contour_thres, _ = cv2.findContours(person_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
     contours = []
     mx_contour = None
@@ -105,9 +107,9 @@ def get_contour(person_img):
             #print (len(c))
     contours.append(mx_contour)
 
-    contour_thres_img = np.zeros(person_img.shape, np.uint8)
+    contour_thres_img = np.zeros(person_mask.shape, np.uint8)
     cv2.drawContours(contour_thres_img, contours, -1, 100, 2)
-    #display_sidebyside([person_img, contour_thres_img])
+    #display_sidebyside([person_mask, contour_thres_img])
 
     return contours
 
@@ -233,7 +235,9 @@ def get_pose(img):
             "RKnee":points[BODY_PARTS['RKnee']],
             "LKnee":points[BODY_PARTS['LKnee']],
             "REar":points[BODY_PARTS['REar']],
-            "LEar":points[BODY_PARTS['LEar']]
+            "LEar":points[BODY_PARTS['LEar']],
+            "RWrist":points[BODY_PARTS['RWrist']],
+            "RElbow":points[BODY_PARTS["RElbow"]]
         }
     elif dataset=='MPI':
         part_coord = {
@@ -246,8 +250,10 @@ def get_pose(img):
             "RKnee":points[BODY_PARTS['RKnee']],
             "LKnee":points[BODY_PARTS['LKnee']],
             "Chest":points[BODY_PARTS["Chest"]],
-            "REar":points[BODY_PARTS['REar']],
-            "LEar":points[BODY_PARTS['LEar']]
+            # "REar":points[BODY_PARTS['REar']],
+            # "LEar":points[BODY_PARTS['LEar']],
+            "RWrist":points[BODY_PARTS['RWrist']],
+            "RElbow":points[BODY_PARTS["RElbow"]]
         }
     elif dataset == "BODY":
         part_coord = {
@@ -260,19 +266,27 @@ def get_pose(img):
             "RKnee":points[BODY_PARTS['RKnee']],
             "LKnee":points[BODY_PARTS['LKnee']],
             "REar":points[BODY_PARTS['REar']],
-            "LEar":points[BODY_PARTS['LEar']]
+            "LEar":points[BODY_PARTS['LEar']],
+            "RWrist":points[BODY_PARTS['RWrist']],
+            "RElbow":points[BODY_PARTS["RElbow"]]
         }
     return img, part_coord
 
-def get_measurements(initial_img, contour_img, contour, body_parts):
+def get_orientation(body_parts):
 
-    # height = get_person_height(contour)
+    if body_parts['RWrist'] and body_parts['RElbow'] and body_parts['REar'] and abs(body_parts['RShoulder'][0] - body_parts['LShoulder'][0]) > 80:
+        return 'f'
+    else:
+        return 's'
+
+def get_measurements(contour_img, body_parts, orientation):
+
     height = contour_img.shape[0]
-    shoulder_width = get_shoulder_width(contour_img, body_parts)
-    neck_width = get_neck_width(contour_img, body_parts)
-    hip_width = get_hip_width(contour_img, body_parts)
-    knee_width = get_knee_width(contour_img, body_parts)
-    head_width = get_head_width(contour_img, body_parts)
+    shoulder_width = get_shoulder_width(contour_img, body_parts, orientation)
+    neck_width = get_neck_width(contour_img, body_parts, orientation)
+    hip_width = get_hip_width(contour_img, body_parts, orientation)
+    knee_width = get_knee_width(contour_img, body_parts, orientation)
+    head_width = get_head_width(contour_img, body_parts, orientation)
 
     return {
         "person_height": height,
@@ -283,25 +297,26 @@ def get_measurements(initial_img, contour_img, contour, body_parts):
         "head_width": head_width
     }
 
-def get_person_height(contour):
-    highest_y = 100000
-    for cnt in contour[0]:
-        y = cnt.item(1) #Y coordinate
-        if y < highest_y:
-            highest_y = y
 
-    return highest_y
 
-def get_shoulder_width(contour_img, body_parts):
-    shoulder_height = int((body_parts['LShoulder'][1] + body_parts['RShoulder'][1]) / 2)
+def get_shoulder_width(contour_img, body_parts, orientation):
 
-    left = body_parts['RShoulder'][0]
+    if orientation == 'f':
+        shoulder_height = int((body_parts['LShoulder'][1] + body_parts['RShoulder'][1]) / 2)
+
+        left = body_parts['RShoulder'][0]
+        right = body_parts['LShoulder'][0]
+    else:
+        shoulder_height = int(body_parts['RShoulder'][1])
+
+        left = right = body_parts['LShoulder'][0]
+
+
     for x in reversed(range(0, left)):
         if contour_img[shoulder_height, x] == 0:
             left = x
             break
 
-    right = body_parts['LShoulder'][0]
     for x in range(right, len(contour_img[0])):
         if contour_img[shoulder_height, x] == 0:
             right = x
@@ -313,31 +328,44 @@ def get_shoulder_width(contour_img, body_parts):
 
     return (right - left, shoulder_height)
 
-def get_neck_width(contour_img, body_parts):
+def get_neck_width(contour_img, body_parts, orientation):
     neck_range = 100
 
     min_neck_width = len(contour_img[1])
-    ml = mr = my = None
 
-    initial_neck_y = body_parts['Neck'][1]
-    for neck_y in range(initial_neck_y - neck_range, initial_neck_y):
+    if orientation == 'f' or orientation == 's':
+        ml = mr = my = None
 
-        left = right = body_parts['Neck'][0]
-        for x in reversed(range(0, left)):
-            if contour_img[neck_y, x] == 0:
-                left = x
-                break
+        initial_neck_y = body_parts['Neck'][1]
+        for neck_y in range(initial_neck_y - neck_range, initial_neck_y):
 
-        for x in range(right, len(contour_img[0])):
-            if contour_img[neck_y, x] == 0:
-                right = x
-                break
+            left = right = body_parts['Neck'][0]
+            for x in reversed(range(0, left)):
+                if contour_img[neck_y, x] == 0:
+                    left = x
+                    break
 
-        if not min_neck_width or min_neck_width > right-left:
-            min_neck_width = right-left
-            mr = right
-            ml = left
-            my = neck_y
+            for x in range(right, len(contour_img[0])):
+                if contour_img[neck_y, x] == 0:
+                    right = x
+                    break
+
+            if not min_neck_width or min_neck_width > right-left:
+                min_neck_width = right-left
+                mr = right
+                ml = left
+                my = neck_y
+    else:
+        pass
+        # initial_neck = body_parts['Neck']
+        # l_ear = body_parts['LEar']
+
+        # adj_node = ( l_ear[0], initial_neck[1] )
+
+        # hip = math.sqrt((initial_neck[0] - l_ear[0])**2 + (initial_neck[1] - l_ear[1])**2)
+        # adj = math.sqrt((adj_node[0] - initial_neck[0])**2 + (adj_node[1] - initial_neck[1])**2)
+        # neck_angle = math.acos( adj/hip )
+        # print(neck_angle)
 
     cv2.ellipse(contour_img, (ml, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
     cv2.ellipse(contour_img, (mr, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
@@ -345,16 +373,22 @@ def get_neck_width(contour_img, body_parts):
 
     return (min_neck_width, my)
 
-def get_hip_width(contour_img, body_parts):
-    hip_height = int((body_parts['LHip'][1] + body_parts['RHip'][1]) / 2)
+def get_hip_width(contour_img, body_parts, orientation):
 
-    left = body_parts['RHip'][0]
+    if orientation == 'f':
+        hip_height = int((body_parts['LHip'][1] + body_parts['RHip'][1]) / 2)
+        left = body_parts['RHip'][0]
+        right = body_parts['LHip'][0]
+    else:
+        hip_height = int(body_parts['LHip'][1])
+        left = right = body_parts['LHip'][0]
+
+
     for x in reversed(range(0, left)):
         if contour_img[hip_height, x] == 0:
             left = x
             break
 
-    right = body_parts['LHip'][0]
     for x in range(right, len(contour_img[0])):
         if contour_img[hip_height, x] == 0:
             right = x
@@ -366,16 +400,21 @@ def get_hip_width(contour_img, body_parts):
 
     return (right - left, hip_height)
 
-def get_knee_width(contour_img, body_parts):
-    knee_height = int((body_parts['LKnee'][1] + body_parts['RKnee'][1]) / 2)
+def get_knee_width(contour_img, body_parts, orientation):
 
-    left = body_parts['RKnee'][0]
+    if orientation == 'f':
+        knee_height = int((body_parts['LKnee'][1] + body_parts['RKnee'][1]) / 2)
+        left = body_parts['RKnee'][0]
+        right = body_parts['LKnee'][0]
+    else:
+        knee_height = int(body_parts['LKnee'][1])
+        left = right = body_parts['LKnee'][0]
+
     for x in reversed(range(0, left)):
         if contour_img[knee_height, x] == 0:
             left = x
             break
 
-    right = body_parts['LKnee'][0]
     for x in range(right, len(contour_img[0])):
         if contour_img[knee_height, x] == 0:
             right = x
@@ -387,7 +426,7 @@ def get_knee_width(contour_img, body_parts):
 
     return (right - left, knee_height)
 
-def get_head_width(contour_img, body_parts):
+def get_head_width(contour_img, body_parts, orientation):
     head_range = 20
 
     max_head_width = 0
@@ -399,7 +438,7 @@ def get_head_width(contour_img, body_parts):
         initial_head_y = int(body_parts['LEar'][1])
     for head_y in range(initial_head_y - head_range, initial_head_y + head_range):
 
-        left = body_parts['REar'][0]
+        left = body_parts['REar'][0] if orientation == 'f' else body_parts['LEar'][0]
         for x in reversed(range(0, left)):
             if contour_img[head_y, x] == 0:
                 left = x
@@ -419,7 +458,7 @@ def get_head_width(contour_img, body_parts):
 
     cv2.ellipse(contour_img, (ml, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
     cv2.ellipse(contour_img, (mr, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
-    # display_img(contour_img, wait=True)
+    #display_img(contour_img, wait=True)
 
     return (max_head_width, my)
 
@@ -496,7 +535,7 @@ def export_features(human_data, export_filename):
 
     for i in range(len(human_data)):
         del human_data[i]['initial_img']
-        del human_data[i]['person_img']
+        del human_data[i]['person_mask']
         del human_data[i]['contour']
 
     with open(export_filename, 'w') as outfile:
@@ -509,15 +548,15 @@ def prepare(img_names, export_filename=None):
     #prepare get_person() model and save it as function attribute
     get_person.model = torch.hub.load('pytorch/vision:v0.5.0', 'deeplabv3_resnet101', pretrained=True).eval()
 
-    #img_names = ['./CW_data/training/021z004pf.jpg', './CW_data/test/DSC00172.JPG']
+    # img_names = ['./CW_data/training/022z077ps.jpg']
     for i in range(len(img_names)):
         img_name = img_names[i]
         print (f"{i+1}/{len(img_names)}", img_name)
-        initial_img, person_img = get_person(img_name)
+        initial_img, person_mask = get_person(img_name)
 
-        #display_sidebyside([initial_img, person_img], title='perp', wait=True)
+        #display_sidebyside([initial_img, person_mask], title='perp', wait=True)
         #sleep(0.1)
-        contour = get_contour(person_img)
+        contour = get_contour(person_mask)
 
         #crop and only leave person in the picture - helps for OpenPose models
         left = right = top = down = None
@@ -533,20 +572,24 @@ def prepare(img_names, export_filename=None):
             elif not top or point[1] < top:
                 top = point[1]
 
-        initial_img = initial_img[top-10:down+10, left-200:right+200]
-        person_img = person_img[top-10:down+10, left-200:right+200]
+        initial_img = initial_img[top-50:down+50, left-200:right+200]
+        person_mask = person_mask[top-50:down+50, left-200:right+200]
 
-        pose_img, body_parts = get_pose(initial_img.copy())
+        fg = cv2.bitwise_or(initial_img, initial_img, mask=person_mask)
+        pose_img, body_parts = get_pose(fg)
 
-        measurements = get_measurements(initial_img, person_img, contour, body_parts)
+        orientation = get_orientation(body_parts)
 
-        # display_sidebyside([pose_img, cv2.cvtColor(person_img, cv2.COLOR_GRAY2BGR) ], title='pose_img', wait=True)
+        measurements = get_measurements(person_mask, body_parts, orientation)
+        # display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR) , fg], wait=True)
+
 
         data = {
             'name':img_name,
             'initial_img':initial_img,
-            'person_img':person_img,
-            'contour':contour
+            'person_mask':person_mask,
+            'contour':contour,
+            'orientation':orientation
         }
         data = {**data, **measurements}
 

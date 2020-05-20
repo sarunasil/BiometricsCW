@@ -18,8 +18,11 @@ def get_test_image_names():
 
     filenames = []
     for file in listdir(test_folder):
-        # if 'person' not in file:
-        if ('person' not in file and int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG':
+        if 'person' in file:
+            continue
+        # elif (int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG': # 'f' goes through this
+        #     continue
+        else:
             filenames.append(file)
 
     return [ join(test_folder, filename) for filename in filenames]
@@ -33,6 +36,50 @@ def import_features(import_filename='features_training.yaml'):
 
     return features_data
 
+def knn_features_front(acc, i, d):
+
+    fj=0
+    for name, value in sorted(d.items()):
+        # print (name)
+        if name == 'name' or name == 'orientation':
+            continue
+        elif name == 'hip_width':
+            acc[i][fj] = value[1]
+            fj+=1
+        elif name == 'knee_width':
+            acc[i][fj] = value[0]
+            fj+=1
+        elif type(value) == int:
+            acc[i][fj] = value
+            fj += 1
+        else:
+            for v in value:
+                acc[i][fj] = v
+                fj += 1
+
+def knn_features_side(acc, i ,d):
+    fj=0
+    for name, value in sorted(d.items()):
+        # print (name)
+        if name == 'name' or name == 'orientation':
+            if name == 'name':
+                print (value)
+            continue
+        elif name == 'hip_width':
+            acc[i][fj] = value[1]
+            fj+=1
+        elif name == 'knee_width':
+            acc[i][fj] = value[0]
+            fj+=1
+        elif type(value) == int:
+            acc[i][fj] = value
+            fj += 1
+        else:
+            for v in value:
+                acc[i][fj] = v
+                fj += 1
+
+
 def identify():
     features_data = import_features()
 
@@ -45,86 +92,59 @@ def identify():
     # human_data = prepare(get_test_image_names(), 'features_test.yaml')
     human_data = import_features('features_test.yaml')
 
-    knn = cv2.ml.KNearest_create()
-
-    # trainData = np.empty((len(features_data),10),dtype=np.float32)
-    trainData = np.empty((len(features_data),9),dtype=np.float32)
-    i=0
-    heads = np.empty((len(features_data),1),dtype=np.float32)
-    for d in features_data:
-        trainData[i][0] = d['head_width'][0]
-        trainData[i][1] = d['head_width'][1]
-        # #trainData[i][2] = d['hip_width'][0]
-        # trainData[i][2] = 0
-        # trainData[i][3] = d['hip_width'][1]
-        # trainData[i][4] = d['neck_width'][0]
-        # trainData[i][5] = d['neck_width'][1]
-        # trainData[i][6] = d['shoulder_width'][0]
-        # trainData[i][7] = d['shoulder_width'][1]
-        # trainData[i][8] = d['person_height']
-        #
-        trainData[i][2] = d['hip_width'][1]
-        trainData[i][3] = d['neck_width'][0]
-        trainData[i][4] = d['neck_width'][1]
-        trainData[i][5] = d['shoulder_width'][0]
-        trainData[i][6] = d['shoulder_width'][1]
-        trainData[i][7] = d['person_height']
-        trainData[i][8] = d['knee_width'][0]
-        # trainData[i][9] = d['knee_width'][1]
-        heads[i][0] = d['head_width'][0]
-        i+=1
-
-
-
-# ---------------------------------------------------
-
-
-    trainData1 = np.empty((len(features_data),(len(features_data[0])-1)*2 - 1  ),dtype=np.float32) #-1 for 'name', *2 for tuples, -1 for 'height'
+# start front knn
+    knn_front = cv2.ml.KNearest_create()
+    trainDataFront = np.zeros((int(len(features_data)/2), len(features_data[0])*2  ),dtype=np.float32)
     i=0
     for d in features_data:
-        fj=0
-        for name, value in sorted(d.items()):
-            print (name)
-            if name == 'name':
-                continue
-            #elif name == 'hip_width':
-            #    continue
-            elif type(value) == int:
-                trainData1[i][fj] = value
-                fj += 1
-            else:
-                for v in value:
-                    trainData1[i][fj] = v
-                    fj += 1
+        if d['orientation'] == 's':
+            continue
+        knn_features_front(trainDataFront, i, d)
         i+=1
 
-# -----------------------------------------------
+    # scaler_front = preprocessing.MinMaxScaler()
+    # scaler_front = preprocessing.StandardScaler()
+    scaler_front = preprocessing.RobustScaler()
 
-    # trainDataNorm = cv2.normalize(trainData, None, norm_type=cv2.NORM_INF)
-    # trainDataNorm = trainData
+    scaler_front.fit(trainDataFront)
+    trainDataFrontNorm = scaler_front.transform(trainDataFront)
 
-
-    # scaler = preprocessing.MinMaxScaler()
-    # scaler = preprocessing.StandardScaler()
-    scaler = preprocessing.RobustScaler()
-
-    print(scaler.fit(trainData))
-
-    trainDataNorm = scaler.transform(trainData)
-
-# --------
-    scaler1 = preprocessing.RobustScaler()
-
-    print(scaler1.fit(trainData1))
-
-    trainDataNorm1 = scaler1.transform(trainData1)
-# ------
-
-    responses = np.empty((len(features_data),1),dtype=np.float32)
+    responses_front = np.empty((int(len(features_data)/2),1),dtype=np.float32)
+    index = 0
     for i in range(len(features_data)):
-        responses[i][0] = i
+        if features_data[i]['orientation'] == 'f':
+            responses_front[index][0] = i
+            index += 1
 
-    knn.train(trainDataNorm1, cv2.ml.ROW_SAMPLE, responses)
+    knn_front.train(trainDataFrontNorm, cv2.ml.ROW_SAMPLE, responses_front)
+# end front knn
+
+# start side knn
+    knn_side = cv2.ml.KNearest_create()
+    trainDataSide = np.zeros((int(len(features_data)/2), len(features_data[0])*2),dtype=np.float32)
+    i=0
+    for d in features_data:
+        if d['orientation'] == 'f':
+            continue
+        knn_features_side(trainDataSide, i, d)
+        i+=1
+
+    # scaler_side = preprocessing.MinMaxScaler()
+    # scaler_side = preprocessing.StandardScaler()
+    scaler_side = preprocessing.RobustScaler()
+
+    scaler_side.fit(trainDataSide)
+    trainDataSideNorm = scaler_side.transform(trainDataSide)
+
+    responses_side = np.empty((int(len(features_data)/2),1),dtype=np.float32)
+    index = 0
+    for i in range(len(features_data)):
+        if features_data[i]['orientation'] == 's':
+            responses_side[index][0] = i
+            index += 1
+
+    knn_side.train(trainDataSideNorm, cv2.ml.ROW_SAMPLE, responses_side)
+# end side knn
 
     correct_guesses = []
     i = 1
@@ -132,53 +152,23 @@ def identify():
         if 'contour' in human:
             del human['contour']
             del human['initial_img']
-            del human['person_img']
+            del human['person_mask']
 
+        if human['orientation'] == 'f':
+            new = np.zeros((1,trainDataFront.shape[1] ),dtype=np.float32)
 
-        new = np.empty((1,trainData.shape[1]), dtype=np.float32)
-        new[0][0] = human['head_width'][0]
-        new[0][1] = human['head_width'][1]
-        #new[0][2] = human['hip_width'][0]
-        # new[0][2] = 0
-        # new[0][3] = human['hip_width'][1]
-        # new[0][4] = human['neck_width'][0]
-        # new[0][5] = human['neck_width'][1]
-        # new[0][6] = human['shoulder_width'][0]
-        # new[0][7] = human['shoulder_width'][1]
-        # new[0][8] = human['person_height']
-        new[0][2] = human['hip_width'][1]
-        new[0][3] = human['neck_width'][0]
-        new[0][4] = human['neck_width'][1]
-        new[0][5] = human['shoulder_width'][0]
-        new[0][6] = human['shoulder_width'][1]
-        new[0][7] = human['person_height']
-        new[0][8] = human['knee_width'][0]
-        # new[0][9] = human['knee_width'][1]
-        # newNorm = cv2.normalize(np.vstack([trainData, new]), None, norm_type=cv2.NORM_INF)[-1:]
+            knn_features_front(new, 0, human)
 
-        newNorm = scaler.transform(new)
-# -----------------------------------------------
-        new1 = np.empty((1,trainData1.shape[1] ),dtype=np.float32)
-        fj = 0
-        for name, value in sorted(human.items()):
-            print (name)
-            if name == 'name':
-                continue
-            elif name == 'hip_width':
-                continue
-            elif type(value) == int:
-                new1[0][fj] = value
-                fj += 1
-            else:
-                for v in value:
-                    new1[0][fj] = v
-                    fj += 1
-# -----------------------------------------------
+            newNorm = scaler_front.transform(new)
+            ret, results, neighbours, dist = knn_front.findNearest( newNorm, 3)
+        else:
+            new = np.zeros((1,trainDataSide.shape[1] ),dtype=np.float32)
 
-        newNorm1 = scaler1.transform(new1)
-        # newNorm = new
+            knn_features_side(new, 0, human)
 
-        ret, results, neighbours, dist = knn.findNearest( newNorm1, 3)
+            newNorm = scaler_side.transform(new)
+            ret, results, neighbours, dist = knn_side.findNearest( newNorm, 3)
+
         # print( "result:  {}\n".format(results) )
         # print( "neighbours:  {}\n".format(neighbours) )
         # for nei in neighbours[0]:
@@ -191,18 +181,19 @@ def identify():
         if correct_answer == features_data[int(neighbours[0, 0])]['name'].split('/')[-1]:
             print (f"{i}. YES")
             correct_guesses.append(i)
+        else:
+            print (f"{i}. NO")
 
 
         img_training = [ cv2.imread( list(features_data)[int(n)]['name'], cv2.IMREAD_COLOR) for n in neighbours[0] ]
         img_test = cv2.imread(human['name'] , cv2.IMREAD_COLOR )
-        # display_sidebyside([img_test] + img_training, title='t', wait=True)
+        # display_sidebyside([img_test] + img_training, title='t '+str(i), wait=True)
 
         i+=1
 
     print ("Number of correct answers:",len(correct_guesses), "Out of:", len(human_data), correct_guesses)
 
 def main():
-    #prepare()
 
     identify()
 
