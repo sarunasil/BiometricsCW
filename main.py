@@ -157,8 +157,8 @@ def load_knn_models(features_data):
 def identify():
     features_data = import_features()
 
-    # human_data = prepare(get_test_image_names(), 'features_test.yaml')
-    human_data = import_features('features_test.yaml')
+    human_data = prepare(get_test_image_names(), 'features_test.yaml')
+    # human_data = import_features('features_test.yaml')
 
     # knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
 
@@ -177,7 +177,7 @@ def identify():
             del human['person_mask']
 
         new = np.zeros((1,len(features_data[0])*2),dtype=np.float32)
-        if human['orientation'] == 'f':
+        if 'orientation' in human and human['orientation'] == 'f':
             knn_features_front(new, 0, human)
 
             newNorm = scaler_front.transform(new)

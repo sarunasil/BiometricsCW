@@ -497,10 +497,10 @@ def get_left_right_side(contour,img):
             r_i = i
     right_side = contour[r_i:]
 
-    left_contour_img = np.zeros(img.shape, np.uint8)
-    right_contour_img = np.zeros(img.shape, np.uint8)
-    cv2.drawContours(left_contour_img, left_side, -1, (255), 2)
-    cv2.drawContours(right_contour_img, right_side, -1, (255), 2)
+    # left_contour_img = np.zeros(img.shape, np.uint8)
+    # right_contour_img = np.zeros(img.shape, np.uint8)
+    # cv2.drawContours(left_contour_img, left_side, -1, (255), 2)
+    # cv2.drawContours(right_contour_img, right_side, -1, (255), 2)
     # display_sidebyside([left_contour_img, right_contour_img], title='left/right', wait=True)
 
     return left_side, right_side
@@ -526,18 +526,23 @@ def get_wavelet(contour):
     top = contour[0].item(1)
     bottom = contour[-1].item(1)
 
+    minn = 100000
+    for dot in contour:
+        minn = min(minn, dot.item(0))
+
     dic = {}
     for dot in contour:
         if dot.item(1) in dic:
-            dic[dot.item(1)].append(dot.item(0))
+            dic[dot.item(1)].append(dot.item(0)-minn)
         else:
-            dic[dot.item(1)] = [dot.item(0)]
+            dic[dot.item(1)] = [dot.item(0)-minn]
 
     graph = np.empty((1, top - bottom +1), dtype=np.float)
     i = 0
     for k,values in sorted(dic.items()):
         graph[0][i] = mean(values)
         i+=1
+    return graph.flatten().tolist()
 
     # scaler = preprocessing.MinMaxScaler()
     # scaler = preprocessing.StandardScaler()
@@ -546,13 +551,13 @@ def get_wavelet(contour):
     # scaler.fit(graph.transpose())
     # graphNorm = scaler.transform(graph.transpose())
 
-    a = plot_coeffs(graph.flatten().tolist())
+    # a = plot_coeffs(graph.flatten().tolist())
 
-    b = []
-    for aa in a:
-        b.append(float(aa))
+    # b = []
+    # for aa in a:
+    #     b.append(float(aa))
 
-    return b
+    # return b
 
 def display_together(imgs, title='img', wait=False):
 
@@ -625,18 +630,19 @@ def prepare(img_names, export_filename=None):
         initial_img = initial_img[top-50:down+50, left-200:right+200]
         person_mask = person_mask[top-50:down+50, left-200:right+200]
 
-        fg = cv2.bitwise_or(initial_img, initial_img, mask=person_mask)
-        pose_img, body_parts = get_pose(fg)
+        # fg = cv2.bitwise_or(initial_img, initial_img, mask=person_mask)
+        # pose_img, body_parts = get_pose(fg)
 
-        orientation = get_orientation(body_parts)
+        # orientation = get_orientation(body_parts)
 
-        mes_dots_drawing = person_mask.copy()
-        measurements = get_measurements(mes_dots_drawing, body_parts, orientation)
+        # mes_dots_drawing = person_mask.copy()
+        # measurements = get_measurements(mes_dots_drawing, body_parts, orientation)
         # display_sidebyside([initial_img, cv2.cvtColor(mes_dots_drawing, cv2.COLOR_GRAY2BGR) , fg], wait=True)
 
         #get contour again - update it due to cropping
-        contour = get_contour(person_mask)
-        left_side, right_side = get_left_right_side(contour, person_mask)
+        resized = cv2.resize(person_mask, (int(person_mask.shape[1] * 0.6), int(person_mask.shape[0] * 0.3)) )
+        contour = get_contour(resized)
+        left_side, right_side = get_left_right_side(contour, resized)
 
         wavelet = get_wavelet(right_side)
 
@@ -645,7 +651,7 @@ def prepare(img_names, export_filename=None):
             'initial_img':initial_img,
             'person_mask':person_mask,
             'contour':contour,
-            'orientation':orientation,
+            # 'orientation':orientation,
             'wavelet': wavelet
         }
         # data = {**data, **measurements}
