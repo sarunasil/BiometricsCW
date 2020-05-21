@@ -11,6 +11,7 @@ from statistics import mean
 
 import cv2
 import torch
+import pywt
 import numpy as np
 from PIL import Image
 from matplotlib import pyplot
@@ -504,6 +505,23 @@ def get_left_right_side(contour,img):
 
     return left_side, right_side
 
+def plot_coeffs(data):
+    mode = pywt.Modes.sp1DWT = 1
+
+    w = pywt.Wavelet('haar')
+    cd = []
+
+    for i in range(5):
+        _, d = pywt.dwt(data, w)
+        cd.append(d)
+
+    noisy_wavelet = []
+    for val in cd[0]:
+        noise = np.random.normal(0, 0.00001)
+        noisy_wavelet.append(val + noise)
+
+    return noisy_wavelet
+
 def get_wavelet(contour):
     top = contour[0].item(1)
     bottom = contour[-1].item(1)
@@ -522,13 +540,19 @@ def get_wavelet(contour):
         i+=1
 
     # scaler = preprocessing.MinMaxScaler()
-    scaler = preprocessing.StandardScaler()
+    # scaler = preprocessing.StandardScaler()
     # scaler = preprocessing.RobustScaler()
 
-    scaler.fit(graph.transpose())
-    graphNorm = scaler.transform(graph.transpose())
+    # scaler.fit(graph.transpose())
+    # graphNorm = scaler.transform(graph.transpose())
 
-    return graphNorm
+    a = plot_coeffs(graph.flatten().tolist())
+
+    b = []
+    for aa in a:
+        b.append(float(aa))
+
+    return b
 
 def display_together(imgs, title='img', wait=False):
 
@@ -621,9 +645,10 @@ def prepare(img_names, export_filename=None):
             'initial_img':initial_img,
             'person_mask':person_mask,
             'contour':contour,
-            'orientation':orientation
+            'orientation':orientation,
+            'wavelet': wavelet
         }
-        data = {**data, **measurements}
+        # data = {**data, **measurements}
 
         human_data.append(data)
 

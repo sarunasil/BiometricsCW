@@ -10,6 +10,8 @@ import cv2
 import numpy as np
 from matplotlib import pyplot
 from sklearn import preprocessing
+from scipy.spatial.distance import euclidean
+from fastdtw import fastdtw
 
 from preparations import prepare, display_sidebyside
 
@@ -20,8 +22,8 @@ def get_test_image_names():
     for file in listdir(test_folder):
         if 'person' in file:
             continue
-        # elif (int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG': # 'f' goes through this
-        #     continue
+        elif (int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG': # 'f' goes through this
+            continue
         else:
             filenames.append(file)
 
@@ -79,6 +81,20 @@ def knn_features_side(acc, i ,d):
                 acc[i][fj] = v
                 fj += 1
 
+def get_fastDTW(entry, base_cases):
+
+    name = ''
+    min_dist = None
+    i = 1
+    for base_case in base_cases:
+        distance, path = fastdtw(base_case['wavelet'], entry['wavelet'], radius=4, dist=euclidean)
+        print(i, distance, base_case['name'])
+        if not min_dist or distance < min_dist:
+            min_dist = distance
+            name = base_case['name']
+        i += 1
+
+    return min_dist, name
 
 def load_knn_models(features_data):
 
@@ -144,7 +160,7 @@ def identify():
     # human_data = prepare(get_test_image_names(), 'features_test.yaml')
     human_data = import_features('features_test.yaml')
 
-    knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
+    # knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
 
     answers = {}
     with open('test-training_map.txt', mode='r') as csv_file:
@@ -167,10 +183,14 @@ def identify():
             newNorm = scaler_front.transform(new)
             ret, results, neighbours, dist = knn_front.findNearest( newNorm, 3)
         else:
-            knn_features_side(new, 0, human)
+            # knn_features_side(new, 0, human)
 
-            newNorm = scaler_side.transform(new)
-            ret, results, neighbours, dist = knn_side.findNearest( newNorm, 3)
+            # newNorm = scaler_side.transform(new)
+            # ret, results, neighbours, dist = knn_side.findNearest( newNorm, 3)
+
+            dist, name = get_fastDTW(human, features_data)
+            print("BEST MATCH:", dist, name, human['name'])
+            print()
 
         # print( "result:  {}\n".format(results) )
         # print( "neighbours:  {}\n".format(neighbours) )
@@ -178,10 +198,11 @@ def identify():
         #     print ( list(features_data)[int(nei)] )
         # print ("")
         # print ( "human:", human )
-        print( "distance:  {}\n".format(dist) )
+        # print( "distance:  {}\n".format(dist) )
 
         correct_answer = answers[ human['name'].split('/')[-1] ]
-        if correct_answer == features_data[int(neighbours[0, 0])]['name'].split('/')[-1]:
+        print(f"correct answ: {correct_answer}, given asnwer - {name.split('/')[-1]}")
+        if correct_answer == name.split('/')[-1]:
             print (f"{i}. YES")
             correct_guesses.append(i)
         else:
