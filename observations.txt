@@ -1,0 +1,13 @@
+profile shape (x,y) graph with fastDTW
+
+shoulder-neck angle avg or separate
+
+head width, height
+neck width, height
+shoulder width, height
+shoulder-elbow length avg
+hip width, height (up to wrist width)
+knee width, height -
+angle width, height -
+hip-angle length avg
+

@@ -20,9 +20,9 @@ def get_test_image_names():
     for file in listdir(test_folder):
         if 'person' in file:
             continue
-        # elif (int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG': # 'f' goes through this
+        elif (int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG': # 'f' goes through this
         #     continue
-        else:
+        # else:
             filenames.append(file)
 
     return [ join(test_folder, filename) for filename in filenames]
@@ -62,8 +62,6 @@ def knn_features_side(acc, i ,d):
     for name, value in sorted(d.items()):
         # print (name)
         if name == 'name' or name == 'orientation':
-            if name == 'name':
-                print (value)
             continue
         elif name == 'hip_width':
             acc[i][fj] = value[1]
@@ -82,36 +80,44 @@ def knn_features_side(acc, i ,d):
 
 def load_knn_models(features_data):
 
+    side_pics = 0
+    for f in features_data:
+        if f['orientation'] == 's':
+            side_pics += 1
+
     # start front knn
-    knn_front = cv2.ml.KNearest_create()
-    trainDataFront = np.zeros((int(len(features_data)/2), len(features_data[0])*2  ),dtype=np.float32)
-    i=0
-    for d in features_data:
-        if d['orientation'] == 's':
-            continue
-        knn_features_front(trainDataFront, i, d)
-        i+=1
+    if side_pics != len(features_data):
+        knn_front = cv2.ml.KNearest_create()
+        trainDataFront = np.zeros((len(features_data) - side_pics, len(features_data[0])*2  ),dtype=np.float32)
+        i=0
+        for d in features_data:
+            if d['orientation'] == 's':
+                continue
+            knn_features_front(trainDataFront, i, d)
+            i+=1
 
-    # scaler_front = preprocessing.MinMaxScaler()
-    # scaler_front = preprocessing.StandardScaler()
-    scaler_front = preprocessing.RobustScaler()
+        # scaler_front = preprocessing.MinMaxScaler()
+        # scaler_front = preprocessing.StandardScaler()
+        scaler_front = preprocessing.RobustScaler()
 
-    scaler_front.fit(trainDataFront)
-    trainDataFrontNorm = scaler_front.transform(trainDataFront)
+        scaler_front.fit(trainDataFront)
+        trainDataFrontNorm = scaler_front.transform(trainDataFront)
 
-    responses_front = np.empty((int(len(features_data)/2),1),dtype=np.float32)
-    index = 0
-    for i in range(len(features_data)):
-        if features_data[i]['orientation'] == 'f':
-            responses_front[index][0] = i
-            index += 1
+        responses_front = np.empty((len(features_data)-side_pics,1),dtype=np.float32)
+        index = 0
+        for i in range(len(features_data)):
+            if features_data[i]['orientation'] == 'f':
+                responses_front[index][0] = i
+                index += 1
 
-    knn_front.train(trainDataFrontNorm, cv2.ml.ROW_SAMPLE, responses_front)
+        knn_front.train(trainDataFrontNorm, cv2.ml.ROW_SAMPLE, responses_front)
+    else:
+        knn_front = scaler_front = None
     # end front knn
 
     # start side knn
     knn_side = cv2.ml.KNearest_create()
-    trainDataSide = np.zeros((int(len(features_data)/2), len(features_data[0])*2),dtype=np.float32)
+    trainDataSide = np.zeros((side_pics, len(features_data[0])*2),dtype=np.float32)
     i=0
     for d in features_data:
         if d['orientation'] == 'f':
@@ -126,7 +132,7 @@ def load_knn_models(features_data):
     scaler_side.fit(trainDataSide)
     trainDataSideNorm = scaler_side.transform(trainDataSide)
 
-    responses_side = np.empty((int(len(features_data)/2),1),dtype=np.float32)
+    responses_side = np.empty((side_pics,1),dtype=np.float32)
     index = 0
     for i in range(len(features_data)):
         if features_data[i]['orientation'] == 's':
@@ -141,8 +147,8 @@ def load_knn_models(features_data):
 def identify():
     features_data = import_features()
 
-    # human_data = prepare(get_test_image_names(), 'features_test.yaml')
-    human_data = import_features('features_test.yaml')
+    human_data = prepare(get_test_image_names(), 'features_test.yaml')
+    # human_data = import_features('features_test.yaml')
 
     knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
 
@@ -159,6 +165,8 @@ def identify():
             del human['contour']
             del human['initial_img']
             del human['person_mask']
+            del human_data[i]['dots_img']
+            del human_data[i]['pose_img']
 
         new = np.zeros((1,len(features_data[0])*2),dtype=np.float32)
         if human['orientation'] == 'f':
@@ -170,15 +178,7 @@ def identify():
             knn_features_side(new, 0, human)
 
             newNorm = scaler_side.transform(new)
-            ret, results, neighbours, dist = knn_side.findNearest( newNorm, 3)
-
-        # print( "result:  {}\n".format(results) )
-        # print( "neighbours:  {}\n".format(neighbours) )
-        # for nei in neighbours[0]:
-        #     print ( list(features_data)[int(nei)] )
-        # print ("")
-        # print ( "human:", human )
-        print( "distance:  {}\n".format(dist) )
+            ret, results, neighbours, dist = knn_side.findNearest( newNorm, 1)
 
         correct_answer = answers[ human['name'].split('/')[-1] ]
         if correct_answer == features_data[int(neighbours[0, 0])]['name'].split('/')[-1]:
@@ -186,6 +186,21 @@ def identify():
             correct_guesses.append(i)
         else:
             print (f"{i}. NO")
+        print (f"Matching: {human['name']}")
+        c_path = answers[human['name'].split('/')[-1]]
+        for fea in features_data:
+            if c_path in fea['name']:
+                print (f"Correct answer: {fea['name']}")
+                break
+        print (f"Guessed answer {features_data[int(neighbours[0,0])]['name']}")
+
+        print( "result:  {}\n".format(results) )
+        print( "neighbours:  {}\n".format(neighbours) )
+        for nei in neighbours[0]:
+            print ( list(features_data)[int(nei)]['name'] )
+        # print ("")
+        # print ( "human:", human )
+        print( "distance:  {}\n".format(dist) )
 
 
         # img_training = [ cv2.imread( list(features_data)[int(n)]['name'], cv2.IMREAD_COLOR) for n in neighbours[0] ]

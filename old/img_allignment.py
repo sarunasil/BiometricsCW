@@ -51,7 +51,7 @@ def alignImages(im1, im2):
     return im1Reg, h
 
 
-def display_img(img, title='img'):
+def display(img, title='img'):
     height = img.shape[0]
     width = img.shape[1]
     ratio = height/width
@@ -67,7 +67,7 @@ def display_img(img, title='img'):
 def display_together(img1, img2, w1=0.5, w2=0.5, title='img'):
 
     dst = cv2.addWeighted(img1, w1, img2, w2, 0)
-    display_img(dst, title)
+    display(dst, title)
 
 
 if __name__ == '__main__':

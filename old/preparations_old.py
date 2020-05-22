@@ -263,12 +263,12 @@ def display_together(imgs, title='img'):
     for img in imgs:
         dst = cv2.addWeighted(dst, 1, img, 1/len(imgs), 0)
 
-    display_img(dst, title)
+    display(dst, title)
     cv2.waitKey(1)
 
     return dst
 
-def display_img(img, title='img'):
+def display(img, title='img'):
     height = img.shape[0]
     width = img.shape[1]
     ratio = height/width
@@ -283,7 +283,7 @@ def display_img(img, title='img'):
 
 def display_sidebyside(imgs, title='img'):
     concat_img = np.concatenate(tuple(imgs), axis=1)
-    display_img(concat_img, title=title)
+    display(concat_img, title=title)
 
 def export_features(human_data, export_filename='features.yaml'):
 
@@ -326,7 +326,7 @@ def prepare():
 
     #for data in human_data:
         #cv2.line(data['foreground'], (0,data['total_height']), (1000,data['total_height']), 122, 5)
-        #display_img(data['foreground'])
+        #display(data['foreground'])
         #cv2.waitKey(0)
 
     export_features(human_data)
