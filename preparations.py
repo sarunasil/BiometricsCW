@@ -12,9 +12,11 @@ from statistics import mean
 import cv2
 import torch
 import numpy as np
+import matplotlib.pyplot as plt
+
 from PIL import Image
 from matplotlib import pyplot
-from torchvision import transforms
+from torchvision import transforms, models
 from torchvision.utils import save_image
 from sklearn import preprocessing
 
@@ -273,41 +275,35 @@ def get_pose(img):
     return img, part_coord
 
 
-def get_keypoints_rcnn(filename):
+def get_keypoints_rcnn(cv_img):
 
-    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    im_pil = Image.fromarray(img)
+    image = Image.fromarray(cv2.cvtColor(cv_img, cv2.COLOR_BGR2RGB))
 
     # For reversing the operation:
-    im_np = np.asarray(im_pil)
-    image = Image.open(filename)
-    image_tensor = torchvision.transforms.functional.to_tensor(image)
+    # im_np = np.asarray(im_pil)
 
-    output = do_img.model([image_tensor])
+    image_tensor = transforms.functional.to_tensor(image)
+
+    output = get_keypoints_rcnn.model([image_tensor])
     # output is a list of dict, containing the postprocessed predictions
 
-    plt.subplots(figsize=(50,100))
-    tmp = np.array(image)
-    mask = torch.zeros(tmp.shape)
+    parts = ['nose','leye','reye','lear','rear''lshoulder','rshoulder','lelbow','relbow','lwrist','rwrist','lhip','rhip','lknee','rknee','lankle','rankle','nan']
+    dots = {}
     for keypoints in output[0]["keypoints"]:
+        i = 0
         for keypoint in keypoints:
             x,y,_ = keypoint.data
             # print(int(y), int(x))
-            for dx in range(-5,6):
-                # mask[int(y), int(x),1] = 1
-                mask[int(y+dx), int(x+dx),1] = 1
-                mask[int(y-dx), int(x+dx),1] = 1
+            dots[parts[i]] = (int(x), int(y))
+
+            cv2.ellipse(cv_img, dots[parts[i]], (2, 2), 0, 0, 360, (255, 255, 255), cv2.FILLED)
+            cv2.putText(cv_img, str(i), dots[parts[i]], cv2.FONT_HERSHEY_SIMPLEX, 0.75, (255, 255, 255),2,cv2.LINE_AA)
+            i+=1
         break
-    mask = mask  + tmp / 255  *0.6
-    # plt.subplot(2,1,1)
-    # plt.imshow(tmp)
-    # plt.subplot(2,1,1)
-    plt.imshow(mask)
-    plt.show()
 
-    mask = mask.convert('RGB')
 
-    display(mask)
+    # display(cv_img)
+    return cv_img, dots
 
 def get_orientation(body_parts):
 
@@ -546,6 +542,9 @@ def prepare(img_names, export_filename=None):
     #prepare get_person() model and save it as function attribute
     get_person.model = torch.hub.load('pytorch/vision:v0.5.0', 'deeplabv3_resnet101', pretrained=True).eval()
 
+    #prepare rcnn model
+    get_keypoints_rcnn.model = models.detection.keypointrcnn_resnet50_fpn(pretrained=True).eval()
+
     # img_names = ['./CW_data/training/022z077ps.jpg']
     for i in range(len(img_names)):
         img_name = img_names[i]
@@ -576,7 +575,7 @@ def prepare(img_names, export_filename=None):
 
 
 # ------------------------
-        # get_keypoints_rcnn(person_mask)
+        rcnn_pose_img, rcnn_body_parts = get_keypoints_rcnn(initial_img.copy())
 # ------------------------
 
 
@@ -587,13 +586,14 @@ def prepare(img_names, export_filename=None):
         measurements = get_measurements(mes_dots_img, body_parts, orientation)
 
 
-        display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], wait=True)
+        # display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR), rcnn_pose_img], wait=True)
         data = {
             'name':img_name,
             'initial_img':initial_img,
             'person_mask':cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR),
             'pose_img':pose_img,
             'dots_img':cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR),
+            'rcnn_pose_img':rcnn_pose_img,
             'contour':contour,
             'orientation':orientation
         }

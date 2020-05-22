@@ -31,13 +31,17 @@ def get_image_pairs():
 def visualize(test_training_mapping, tests, trainings):
 
     for i in range(len(tests)):
-        test_dots = tests[i]['dots_img']
+        # test_dots = tests[i]['dots_img']
         test_pose = tests[i]['pose_img']
 
-        training_dots = trainings[i]['dots_img']
+        # training_dots = trainings[i]['dots_img']
         training_pose = trainings[i]['pose_img']
 
-        display_sidebyside([test_dots, training_dots, test_pose, training_pose])
+        # display_sidebyside([test_dots, training_dots, test_pose, training_pose])
+
+        rcnn_test_pose = tests[i]['rcnn_pose_img']
+        rcnn_training_pose = trainings[i]['rcnn_pose_img']
+        display_sidebyside([rcnn_test_pose, test_pose, rcnn_training_pose, training_pose])
 
 def main():
     test_training_mapping = get_image_pairs()
