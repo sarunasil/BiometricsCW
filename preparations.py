@@ -199,7 +199,7 @@ def get_pose(img):
     assert(len(BODY_PARTS) <= out.shape[1])
 
     points = []
-    for i in range(len(BODY_PARTS)-1):image = PIL.Image.open('/path/to/an/image.jpg')
+    for i in range(len(BODY_PARTS)-1):
         # # Slice heatmap of corresponging body's part.
         heatMap = out[0, i, :, :]
         _, conf, _, point = cv2.minMaxLoc(heatMap)
@@ -274,6 +274,12 @@ def get_pose(img):
 
 
 def get_keypoints_rcnn(filename):
+
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    im_pil = Image.fromarray(img)
+
+    # For reversing the operation:
+    im_np = np.asarray(im_pil)
     image = Image.open(filename)
     image_tensor = torchvision.transforms.functional.to_tensor(image)
 
@@ -581,7 +587,7 @@ def prepare(img_names, export_filename=None):
         measurements = get_measurements(mes_dots_img, body_parts, orientation)
 
 
-        # display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], wait=True)
+        display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], wait=True)
         data = {
             'name':img_name,
             'initial_img':initial_img,
