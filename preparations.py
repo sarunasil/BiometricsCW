@@ -22,7 +22,7 @@ from sklearn import preprocessing
 
 
 
-def get_training_image_names(orientation = 'f'):# 's' - side, 'f' - front view
+def get_training_image_names(orientation = 's'):# 's' - side, 'f' - front view
     training_folder = "./CW_data/training"
 
     filenames = []
@@ -237,17 +237,56 @@ def get_neck_width(contour_img, body_parts, orientation):
         cv2.ellipse(contour_img, (ml, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
         cv2.ellipse(contour_img, (mr, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
     else:
-        min_neck = (100,100)
-        # initial_neck = body_parts['Neck']
-        # l_ear = body_parts['LEar']
+        initial_neck = body_parts['LShoulder']
+        l_ear = body_parts['LEar']
 
-        # adj_node = ( l_ear[0], initial_neck[1] )
+        adj_node = ( l_ear[0], initial_neck[1] )
 
-        # hip = math.sqrt((initial_neck[0] - l_ear[0])**2 + (initial_neck[1] - l_ear[1])**2)
-        # adj = math.sqrt((adj_node[0] - initial_neck[0])**2 + (adj_node[1] - initial_neck[1])**2)
-        # neck_angle = math.acos( adj/hip )
+        hip = math.sqrt((initial_neck[0] - l_ear[0])**2 + (initial_neck[1] - l_ear[1])**2)
+        adj = math.sqrt((adj_node[0] - initial_neck[0])**2 + (adj_node[1] - initial_neck[1])**2)
+        neck_angle = math.degrees(math.acos( adj/hip ))
         # print(neck_angle)
+        # cv2.line(contour_img,adj_node,initial_neck,128,2)
+        # cv2.line(contour_img,initial_neck, l_ear,128,2)
 
+        mlx = mly = mrx = mry = None
+        for current_left_y in reversed(range(l_ear[1], initial_neck[1])):
+
+            left = initial_neck[0]
+            for x in range(0, left):
+                if contour_img[current_left_y, x] != 0:
+                    left = x
+                    break
+            point_a = (left, current_left_y)
+
+            # cv2.ellipse(contour_img, point_a, (1, 1), 0, 0, 360, 127, cv2.FILLED)
+
+            for y in reversed(range(l_ear[1], current_left_y)):
+                for x in reversed(range(0, contour_img.shape[1])):
+                    if contour_img[y, x] > 200:
+                        right = x
+                        break
+
+                # cv2.ellipse(contour_img, (right, y), (1, 1), 0, 0, 360, 127, cv2.FILLED)
+                # display(contour_img)
+
+                len_a = right - point_a[0]
+                len_b = point_a[1] - y
+                if not len_a or not len_b:
+                    continue
+
+                try_angle = math.degrees(math.tan(len_b/len_a))
+                if ( round(90 - neck_angle - try_angle) == 0 ):
+                    # cv2.line(contour_img,point_a,(right,y),40,2)
+                    width = math.sqrt((right - point_a[0])**2 + (y - point_a[1])**2)
+                    if width < min_neck[0]:
+                        min_neck = (width, int((y - point_a[1])/2))
+                        mlx = point_a[0]
+                        mly = point_a[1]
+                        mrx = right
+                        mry = y
+                    break
+    cv2.line(contour_img,(mrx,mry),(mlx,mly),80,2)
     # display(contour_img)
 
     return min_neck
@@ -259,7 +298,7 @@ def get_shoulder_width(contour_img, body_parts, orientation):
         left = body_parts['RShoulder'][0]
         right = body_parts['LShoulder'][0]
     else:
-        shoulder_height = int(body_parts['RShoulder'][1])
+        shoulder_height = int(body_parts['LShoulder'][1])
 
         left = right = body_parts['LShoulder'][0]
 
@@ -281,7 +320,6 @@ def get_shoulder_width(contour_img, body_parts, orientation):
     return (right - left, shoulder_height)
 
 def get_hip_width(contour_img, body_parts, orientation):
-
     if orientation == 'f':
         hip_height = int((body_parts['LHip'][1] + body_parts['RHip'][1]) / 2)
         left = body_parts['RHip'][0]
@@ -305,6 +343,16 @@ def get_hip_width(contour_img, body_parts, orientation):
     else:
         hip_height = int(body_parts['LHip'][1])
         left = right = body_parts['LHip'][0]
+
+        for x in reversed(range(0, left)):
+            if contour_img[hip_height, x] == 0:
+                left = x
+                break
+
+        for x in range(right, len(contour_img[0])):
+            if contour_img[hip_height, x] == 0:
+                right = x
+                break
 
     cv2.ellipse(contour_img, (left, hip_height), (8, 8), 0, 0, 360, 191, cv2.FILLED)
     cv2.ellipse(contour_img, (right, hip_height), (8, 8), 0, 0, 360, 191, cv2.FILLED)
@@ -334,6 +382,16 @@ def get_knee_width(contour_img, body_parts, orientation):
         knee_height = int(body_parts['LKnee'][1])
         left = right = body_parts['LKnee'][0]
 
+        for x in reversed(range(0, left)):
+            if contour_img[knee_height, x] == 0:
+                left = x
+                break
+
+        for x in range(right, len(contour_img[0])):
+            if contour_img[knee_height, x] == 0:
+                right = x
+                break
+
 
     cv2.ellipse(contour_img, (left, knee_height), (8, 8), 0, 0, 360, 191, cv2.FILLED)
     cv2.ellipse(contour_img, (right, knee_height), (8, 8), 0, 0, 360, 191, cv2.FILLED)
@@ -346,7 +404,7 @@ def get_ankle_width(contour_img, body_parts, orientation):
     min_ankle_width = 0
     ml = mr = my = None
 
-    if orientation == 'f':
+    if orientation == 'f' or True:
         initial_ankle_height = int((body_parts['LAnkle'][1] + body_parts['RAnkle'][1]) / 2)
         left = body_parts['RAnkle'][0]
         right = body_parts['LAnkle'][0]
@@ -466,7 +524,7 @@ def prepare(img_names, export_filename=None):
         measurements = get_measurements(contour[0][0][0], mes_dots_img, body_parts, orientation)
 
 
-        # display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], title='prep main display')
+        display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], title='prep main display')
         data = {
             'name':img_name,
             'initial_img':initial_img,
