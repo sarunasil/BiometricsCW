@@ -106,9 +106,9 @@ def load_knn_models(features_data):
             knn_features_front(trainDataFront, i, d)
             i+=1
 
-        scaler_front = preprocessing.MinMaxScaler()
+        # scaler_front = preprocessing.MinMaxScaler()
         # scaler_front = preprocessing.StandardScaler()
-        # scaler_front = preprocessing.RobustScaler()
+        scaler_front = preprocessing.RobustScaler()
 
         scaler_front.fit(trainDataFront)
         trainDataFrontNorm = scaler_front.transform(trainDataFront)
@@ -202,7 +202,7 @@ def identify(human, features_data, knn_front, knn_side, scaler_front, scaler_sid
     return guess_id, guess_name, dist[0]
 
 
-def authenticate(features_data, human_data, threshold = 100000000, check_answers = True, verbose = False):
+def authenticate(features_data, human_data, threshold = 100000000, check_answers = True, verbose = False, vverbose = False):
     knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
 
     answers = get_correct_answers()
@@ -212,18 +212,22 @@ def authenticate(features_data, human_data, threshold = 100000000, check_answers
     for human in human_data:
         correct_answer = answers[ human['name'].split('/')[-1] ]
 
-        guess_id, guess_name, dist = identify(human, features_data, knn_front, knn_side, scaler_front, scaler_side, verbose)
+        guess_id, guess_name, dist = identify(human, features_data, knn_front, knn_side, scaler_front, scaler_side, vverbose)
 
         if (correct_answer == guess_name.split('/')[-1] or not check_answers) and dist < threshold:
-            print (f"{i}. YES {dist} {human['name']}") if verbose else True
+            print (f"{i}. YES {dist} {human['name']}") if vverbose else True
 
             correct_guesses.append(i)
         else:
-            print (f"{i}. NO {dist} {human['name']}") if verbose else True
+            print (f"{i}. NO {dist} {human['name']}") if vverbose else True
 
         i+=1
 
-    print ("Number of correct answers:",len(correct_guesses), "Out of:", len(human_data), correct_guesses)
+    if verbose:
+        if check_answers:
+            print ("Number of correct answers:",len(correct_guesses), "Out of:", len(human_data), correct_guesses)
+        else:
+            print("Number of authentications:", len(correct_guesses))
 
     return len(correct_guesses)
 
@@ -244,8 +248,8 @@ def main():
 
     far = {}
     frr = {}
-    for threshold in np.arange(0, 0.1,0.001):
-        authenticated_real = authenticate(features_data, human_data, threshold, verbose = False)
+    for threshold in np.arange(0, 2,0.01):
+        authenticated_real = authenticate(features_data, human_data, threshold)
         frr[threshold] = (len(human_data) - authenticated_real) / len(human_data)
 
         authenticated_false = authenticate(features_data_far, human_data, threshold, check_answers = False)
@@ -254,8 +258,13 @@ def main():
     x_frr, y_frr = zip(*sorted(frr.items()))
     x_far, y_far = zip(*sorted(far.items()))
 
-    idx = np.argwhere( np.diff(np.sign( np.array(y_frr) - np.array(y_far) )) ).flatten()[0]+1
-    authenticated_real = authenticate(features_data, human_data, x_frr[idx], verbose = False)
+    idx = np.argwhere( np.diff(np.sign( np.array(y_frr) - np.array(y_far) )) ).flatten()
+    if len(idx) > 0:
+        idx = idx[0]
+        authenticated_real = authenticate(features_data, human_data, x_frr[idx], verbose = True)
+        print (f"EER = {round(y_far[idx]*100,2)}%")
+    else:
+        print("No intersection")
 
     pyplot.plot(x_frr, y_frr, 'b', label='FRR')
     pyplot.plot(x_far, y_far, 'r', label='FAR')

@@ -138,7 +138,6 @@ def get_keypoints_rcnn(cv_img):
             i+=1
         break
 
-
     # display(cv_img)
     return cv_img, dots
 
@@ -171,34 +170,41 @@ def get_measurements(first_dot, contour_img, body_parts, orientation):
         "ankle_width": ankle_width
     }
 
-def get_shoulder_width(contour_img, body_parts, orientation):
+def get_head_width(contour_img, body_parts, orientation):
+    head_range = 1#maybe turn off range, since ear detection is accurate?
 
-    if orientation == 'f':
-        shoulder_height = int((body_parts['LShoulder'][1] + body_parts['RShoulder'][1]) / 2)
+    max_head_width = 0
+    ml = mr = my = None
 
-        left = body_parts['RShoulder'][0]
-        right = body_parts['LShoulder'][0]
+    if body_parts['REar']:
+        initial_head_y = int((body_parts['LEar'][1] + body_parts['REar'][1]) / 2)
     else:
-        shoulder_height = int(body_parts['RShoulder'][1])
+        initial_head_y = int(body_parts['LEar'][1])
+    for head_y in range(initial_head_y - head_range, initial_head_y + head_range):
 
-        left = right = body_parts['LShoulder'][0]
+        left = body_parts['REar'][0] if orientation == 'f' else body_parts['LEar'][0]
+        for x in reversed(range(0, left)):
+            if contour_img[head_y, x] == 0:
+                left = x
+                break
 
+        right = body_parts['LEar'][0]
+        for x in range(right, len(contour_img[0])):
+            if contour_img[head_y, x] == 0:
+                right = x
+                break
 
-    for x in reversed(range(0, left)):
-        if contour_img[shoulder_height, x] == 0:
-            left = x
-            break
+        if not max_head_width or max_head_width < right-left:
+            max_head_width = right-left
+            mr = right
+            ml = left
+            my = head_y
 
-    for x in range(right, len(contour_img[0])):
-        if contour_img[shoulder_height, x] == 0:
-            right = x
-            break
+    cv2.ellipse(contour_img, (ml, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
+    cv2.ellipse(contour_img, (mr, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
+    #display(contour_img, wait=True)
 
-    cv2.ellipse(contour_img, (left, shoulder_height), (8, 8), 0, 0, 360, 75, cv2.FILLED)
-    cv2.ellipse(contour_img, (right, shoulder_height), (8, 8), 0, 0, 360, 75, cv2.FILLED)
-    # display(contour_img, wait=True)
-
-    return (right - left, shoulder_height)
+    return (max_head_width, my)
 
 def get_neck_width(contour_img, body_parts, orientation):
     nose = body_parts['Nose']
@@ -245,6 +251,34 @@ def get_neck_width(contour_img, body_parts, orientation):
     # display(contour_img)
 
     return min_neck
+
+def get_shoulder_width(contour_img, body_parts, orientation):
+    if orientation == 'f':
+        shoulder_height = int((body_parts['LShoulder'][1] + body_parts['RShoulder'][1]) / 2)
+
+        left = body_parts['RShoulder'][0]
+        right = body_parts['LShoulder'][0]
+    else:
+        shoulder_height = int(body_parts['RShoulder'][1])
+
+        left = right = body_parts['LShoulder'][0]
+
+
+    for x in reversed(range(0, left)):
+        if contour_img[shoulder_height, x] == 0:
+            left = x
+            break
+
+    for x in range(right, len(contour_img[0])):
+        if contour_img[shoulder_height, x] == 0:
+            right = x
+            break
+
+    cv2.ellipse(contour_img, (left, shoulder_height), (8, 8), 0, 0, 360, 75, cv2.FILLED)
+    cv2.ellipse(contour_img, (right, shoulder_height), (8, 8), 0, 0, 360, 75, cv2.FILLED)
+    # display(contour_img, wait=True)
+
+    return (right - left, shoulder_height)
 
 def get_hip_width(contour_img, body_parts, orientation):
 
@@ -307,42 +341,6 @@ def get_knee_width(contour_img, body_parts, orientation):
 
     return (right - left, knee_height)
 
-def get_head_width(contour_img, body_parts, orientation):
-    head_range = 1#maybe turn off range, since ear detection is accurate?
-
-    max_head_width = 0
-    ml = mr = my = None
-
-    if body_parts['REar']:
-        initial_head_y = int((body_parts['LEar'][1] + body_parts['REar'][1]) / 2)
-    else:
-        initial_head_y = int(body_parts['LEar'][1])
-    for head_y in range(initial_head_y - head_range, initial_head_y + head_range):
-
-        left = body_parts['REar'][0] if orientation == 'f' else body_parts['LEar'][0]
-        for x in reversed(range(0, left)):
-            if contour_img[head_y, x] == 0:
-                left = x
-                break
-
-        right = body_parts['LEar'][0]
-        for x in range(right, len(contour_img[0])):
-            if contour_img[head_y, x] == 0:
-                right = x
-                break
-
-        if not max_head_width or max_head_width < right-left:
-            max_head_width = right-left
-            mr = right
-            ml = left
-            my = head_y
-
-    cv2.ellipse(contour_img, (ml, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
-    cv2.ellipse(contour_img, (mr, my), (8, 8), 0, 0, 360, 127, cv2.FILLED)
-    #display(contour_img, wait=True)
-
-    return (max_head_width, my)
-
 def get_ankle_width(contour_img, body_parts, orientation):
     ankle_range = 20
     min_ankle_width = 0
@@ -376,10 +374,12 @@ def get_ankle_width(contour_img, body_parts, orientation):
         ankle_y = int(body_parts['LAnkle'][1])
         left = right = body_parts['LAnkle'][0]
 
-
     # display(contour_img)
 
     return (min_ankle_width, ankle_y)
+
+
+
 
 def display_together(imgs, title='img', wait=True):
 
@@ -458,11 +458,7 @@ def prepare(img_names, export_filename=None):
         person_mask = person_mask[down-cropped_size[0]:down, center_x - int(cropped_size[1]/2):center_x + int(cropped_size[1]/2)]
         # display_sidebyside([initial_img,cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR)],wait=True)
 
-
-        # pose_img, body_parts = get_pose(cv2.bitwise_or(initial_img, initial_img, mask=person_mask))
-        # ------------------------
         pose_img, body_parts = get_keypoints_rcnn(cv2.bitwise_or(initial_img, initial_img, mask=person_mask))
-        # ------------------------
 
         orientation = get_orientation(body_parts)
         mes_dots_img = person_mask.copy()
