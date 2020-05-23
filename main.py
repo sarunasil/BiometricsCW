@@ -5,6 +5,7 @@ import csv
 from time import sleep
 from os import listdir
 from os.path import join
+from copy import copy
 
 import cv2
 import numpy as np
@@ -40,15 +41,23 @@ def knn_features_front(acc, i, d):
 
     fj=0
     for name, value in sorted(d.items()):
-        # print (name)
-        if name == 'name' or name == 'orientation':
+        # print (fj, name, value)
+        if (name == 'name' or 
+        name == 'ankle_width' or 
+        name == 'knee_width' or 
+        name == 'shoulder_width' or 
+        # name == 'neck_width' or 
+        # name == 'head_width' or 
+        # name == 'person_height' or 
+        name == 'hip_width' or 
+        name == 'orientation'):
             continue
-        elif name == 'hip_width':
-            acc[i][fj] = value[1]
-            fj+=1
-        elif name == 'knee_width':
-            acc[i][fj] = value[0]
-            fj+=1
+        # elif name == 'neck_width':
+        #     acc[i][fj] = value[0]
+        #     fj+=1
+        # elif name == 'knee_width':
+        #     acc[i][fj] = value[0]
+        #     fj+=1
         elif type(value) == int:
             acc[i][fj] = value
             fj += 1
@@ -56,6 +65,7 @@ def knn_features_front(acc, i, d):
             for v in value:
                 acc[i][fj] = v
                 fj += 1
+    # print(acc[i])
 
 def knn_features_side(acc, i ,d):
     fj=0
@@ -96,9 +106,9 @@ def load_knn_models(features_data):
             knn_features_front(trainDataFront, i, d)
             i+=1
 
-        # scaler_front = preprocessing.MinMaxScaler()
+        scaler_front = preprocessing.MinMaxScaler()
         # scaler_front = preprocessing.StandardScaler()
-        scaler_front = preprocessing.RobustScaler()
+        # scaler_front = preprocessing.RobustScaler()
 
         scaler_front.fit(trainDataFront)
         trainDataFrontNorm = scaler_front.transform(trainDataFront)
@@ -116,104 +126,143 @@ def load_knn_models(features_data):
     # end front knn
 
     # start side knn
-    knn_side = cv2.ml.KNearest_create()
-    trainDataSide = np.zeros((side_pics, len(features_data[0])*2),dtype=np.float32)
-    i=0
-    for d in features_data:
-        if d['orientation'] == 'f':
-            continue
-        knn_features_side(trainDataSide, i, d)
-        i+=1
+    if side_pics > 0:
+        knn_side = cv2.ml.KNearest_create()
+        trainDataSide = np.zeros((side_pics, len(features_data[0])*2),dtype=np.float32)
+        i=0
+        for d in features_data:
+            if d['orientation'] == 'f':
+                continue
+            knn_features_side(trainDataSide, i, d)
+            i+=1
 
-    # scaler_side = preprocessing.MinMaxScaler()
-    # scaler_side = preprocessing.StandardScaler()
-    scaler_side = preprocessing.RobustScaler()
+        # scaler_side = preprocessing.MinMaxScaler()
+        # scaler_side = preprocessing.StandardScaler()
+        scaler_side = preprocessing.RobustScaler()
 
-    scaler_side.fit(trainDataSide)
-    trainDataSideNorm = scaler_side.transform(trainDataSide)
+        scaler_side.fit(trainDataSide)
+        trainDataSideNorm = scaler_side.transform(trainDataSide)
 
-    responses_side = np.empty((side_pics,1),dtype=np.float32)
-    index = 0
-    for i in range(len(features_data)):
-        if features_data[i]['orientation'] == 's':
-            responses_side[index][0] = i
-            index += 1
+        responses_side = np.empty((side_pics,1),dtype=np.float32)
+        index = 0
+        for i in range(len(features_data)):
+            if features_data[i]['orientation'] == 's':
+                responses_side[index][0] = i
+                index += 1
 
-    knn_side.train(trainDataSideNorm, cv2.ml.ROW_SAMPLE, responses_side)
+        knn_side.train(trainDataSideNorm, cv2.ml.ROW_SAMPLE, responses_side)
+    else:
+        knn_side = scaler_side = None
     # end side knn
 
     return knn_front, knn_side, scaler_front, scaler_side
 
-def identify():
-    features_data = import_features()
-
-    human_data = prepare(get_test_image_names(), 'features_test.yaml')
-    # human_data = import_features('features_test.yaml')
-
-    knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
-
+def get_correct_answers():
     answers = {}
     with open('test-training_map.txt', mode='r') as csv_file:
         csv_reader = csv.DictReader(csv_file)
         for row in csv_reader:
             answers[row['test']] = row['training']
+    return answers
 
-    correct_guesses = []
-    i = 1
-    for human in human_data:
-        if 'contour' in human:
-            del human['contour']
-            del human['initial_img']
-            del human['person_mask']
-            del human_data[i]['dots_img']
-            del human_data[i]['pose_img']
+def identify(human, features_data, knn_front, knn_side, scaler_front, scaler_side, verbose = False):
+    if 'contour' in human:
+        del human['contour']
+        del human['initial_img']
+        del human['person_mask']
+        del human['dots_img']
+        del human['pose_img']
 
-        new = np.zeros((1,len(features_data[0])*2),dtype=np.float32)
-        if human['orientation'] == 'f':
-            knn_features_front(new, 0, human)
+    new = np.zeros((1,len(features_data[0])*2),dtype=np.float32)
+    if human['orientation'] == 'f':
+        knn_features_front(new, 0, human)
 
-            newNorm = scaler_front.transform(new)
-            ret, results, neighbours, dist = knn_front.findNearest( newNorm, 3)
-        else:
-            knn_features_side(new, 0, human)
+        newNorm = scaler_front.transform(new)
+        ret, results, neighbours, dist = knn_front.findNearest( newNorm, 1)
+    else:
+        knn_features_side(new, 0, human)
 
-            newNorm = scaler_side.transform(new)
-            ret, results, neighbours, dist = knn_side.findNearest( newNorm, 1)
+        newNorm = scaler_side.transform(new)
+        ret, results, neighbours, dist = knn_side.findNearest( newNorm, 1)
 
-        correct_answer = answers[ human['name'].split('/')[-1] ]
-        if correct_answer == features_data[int(neighbours[0, 0])]['name'].split('/')[-1]:
-            print (f"{i}. YES")
-            correct_guesses.append(i)
-        else:
-            print (f"{i}. NO")
+    guess_id = int(neighbours[0,0])
+    guess_name = features_data[guess_id]['name']
+    if verbose:
         print (f"Matching: {human['name']}")
-        c_path = answers[human['name'].split('/')[-1]]
-        for fea in features_data:
-            if c_path in fea['name']:
-                print (f"Correct answer: {fea['name']}")
-                break
-        print (f"Guessed answer {features_data[int(neighbours[0,0])]['name']}")
+        print (f"Guessed answer {guess_name}")
 
         print( "result:  {}\n".format(results) )
         print( "neighbours:  {}\n".format(neighbours) )
         for nei in neighbours[0]:
             print ( list(features_data)[int(nei)]['name'] )
-        # print ("")
-        # print ( "human:", human )
+        print ("")
+        print ( "human:", human )
         print( "distance:  {}\n".format(dist) )
 
+    return guess_id, guess_name, dist[0]
 
-        # img_training = [ cv2.imread( list(features_data)[int(n)]['name'], cv2.IMREAD_COLOR) for n in neighbours[0] ]
-        # img_test = cv2.imread(human['name'] , cv2.IMREAD_COLOR )
-        # display_sidebyside([img_test] + img_training, title='t '+str(i), wait=True)
+
+def authenticate(features_data, human_data, threshold = 100000000, check_answers = True, verbose = False):
+    knn_front, knn_side, scaler_front, scaler_side = load_knn_models(features_data)
+
+    answers = get_correct_answers()
+
+    correct_guesses = []
+    i = 1
+    for human in human_data:
+        correct_answer = answers[ human['name'].split('/')[-1] ]
+
+        guess_id, guess_name, dist = identify(human, features_data, knn_front, knn_side, scaler_front, scaler_side, verbose)
+
+        if (correct_answer == guess_name.split('/')[-1] or not check_answers) and dist < threshold:
+            print (f"{i}. YES {dist} {human['name']}") if verbose else True
+
+            correct_guesses.append(i)
+        else:
+            print (f"{i}. NO {dist} {human['name']}") if verbose else True
 
         i+=1
 
     print ("Number of correct answers:",len(correct_guesses), "Out of:", len(human_data), correct_guesses)
 
-def main():
+    return len(correct_guesses)
 
-    identify()
+
+def main():
+    features_data = import_features()
+
+    # human_data = prepare(get_test_image_names(), 'features_test.yaml')
+    human_data = import_features('features_test.yaml')
+
+    answers = get_correct_answers()
+    features_data_far = features_data.copy()
+    for _,training in answers.items():
+        for i in range(len(features_data_far)):
+            if training in features_data_far[i]['name']:
+                del features_data_far[i]
+                break
+
+    far = {}
+    frr = {}
+    for threshold in np.arange(0, 0.1,0.001):
+        authenticated_real = authenticate(features_data, human_data, threshold, verbose = False)
+        frr[threshold] = (len(human_data) - authenticated_real) / len(human_data)
+
+        authenticated_false = authenticate(features_data_far, human_data, threshold, check_answers = False)
+        far[threshold] = authenticated_false / len(human_data)
+
+    x_frr, y_frr = zip(*sorted(frr.items()))
+    x_far, y_far = zip(*sorted(far.items()))
+
+    idx = np.argwhere( np.diff(np.sign( np.array(y_frr) - np.array(y_far) )) ).flatten()[0]+1
+    authenticated_real = authenticate(features_data, human_data, x_frr[idx], verbose = False)
+
+    pyplot.plot(x_frr, y_frr, 'b', label='FRR')
+    pyplot.plot(x_far, y_far, 'r', label='FAR')
+    pyplot.yticks(np.arange(0,1.1,0.1))
+    pyplot.legend()
+    pyplot.grid()
+    pyplot.show()
 
 
 if __name__ == "__main__":
