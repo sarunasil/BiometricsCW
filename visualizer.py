@@ -22,7 +22,7 @@ def get_image_pairs():
     with open('test-training_map.txt', mode='r') as csv_file:
         csv_reader = csv.DictReader(csv_file)
         for row in csv_reader:
-            if 's' in row['training']:
+            if 'f' in row['training']:
                 continue
             answers[ join(test_dir, row['test']) ] = join(training_dir, row['training'])
 

@@ -22,8 +22,8 @@ def get_test_image_names():
         if 'person' in file:
             continue
         elif (int(file[-5])%2==0 and file[-7:]!="186.JPG") or file[-7:]=='185.JPG': # 'f' goes through this
-        #     continue
-        # else:
+            continue
+        else:
             filenames.append(file)
 
     return [ join(test_folder, filename) for filename in filenames]
@@ -50,6 +50,7 @@ def knn_features_front(acc, i, d):
         # name == 'head_width' or 
         # name == 'person_height' or 
         name == 'hip_width' or 
+        name == 'neck_pos' or 
         name == 'orientation'):
             continue
         # elif name == 'neck_width':
@@ -70,23 +71,32 @@ def knn_features_front(acc, i, d):
 def knn_features_side(acc, i ,d):
     fj=0
     for name, value in sorted(d.items()):
-        # print (name)
-        if name == 'name' or name == 'orientation':
+        # print (fj, name, value)
+        if (name == 'name' or 
+        name == 'ankle_width' or 
+        name == 'knee_width' or 
+        name == 'shoulder_width' or 
+        # name == 'neck_width' or 
+        # name == 'head_width' or 
+        # name == 'person_height' or 
+        name == 'hip_width' or 
+        name == 'neck_pos' or 
+        name == 'orientation'):
             continue
-        elif name == 'hip_width':
-            acc[i][fj] = value[1]
-            fj+=1
-        elif name == 'knee_width':
-            acc[i][fj] = value[0]
-            fj+=1
-        elif type(value) == int:
+        # elif name == 'neck_width':
+        #     acc[i][fj] = value[0]
+        #     fj+=1
+        # elif name == 'knee_width':
+        #     acc[i][fj] = value[0]
+        #     fj+=1
+        elif type(value) == int or type(value) == float:
             acc[i][fj] = value
             fj += 1
         else:
             for v in value:
                 acc[i][fj] = v
                 fj += 1
-
+    # print(acc[i])
 
 def load_knn_models(features_data):
 
@@ -107,8 +117,8 @@ def load_knn_models(features_data):
             i+=1
 
         # scaler_front = preprocessing.MinMaxScaler()
-        # scaler_front = preprocessing.StandardScaler()
-        scaler_front = preprocessing.RobustScaler()
+        scaler_front = preprocessing.StandardScaler()
+        # scaler_front = preprocessing.RobustScaler()
 
         scaler_front.fit(trainDataFront)
         trainDataFrontNorm = scaler_front.transform(trainDataFront)
@@ -136,9 +146,9 @@ def load_knn_models(features_data):
             knn_features_side(trainDataSide, i, d)
             i+=1
 
-        # scaler_side = preprocessing.MinMaxScaler()
+        scaler_side = preprocessing.MinMaxScaler()
         # scaler_side = preprocessing.StandardScaler()
-        scaler_side = preprocessing.RobustScaler()
+        # scaler_side = preprocessing.RobustScaler()
 
         scaler_side.fit(trainDataSide)
         trainDataSideNorm = scaler_side.transform(trainDataSide)
@@ -178,26 +188,26 @@ def identify(human, features_data, knn_front, knn_side, scaler_front, scaler_sid
         knn_features_front(new, 0, human)
 
         newNorm = scaler_front.transform(new)
-        ret, results, neighbours, dist = knn_front.findNearest( newNorm, 1)
+        ret, results, neighbours, dist = knn_front.findNearest( newNorm, 3)
     else:
         knn_features_side(new, 0, human)
 
         newNorm = scaler_side.transform(new)
-        ret, results, neighbours, dist = knn_side.findNearest( newNorm, 1)
+        ret, results, neighbours, dist = knn_side.findNearest( newNorm, 3)
 
     guess_id = int(neighbours[0,0])
     guess_name = features_data[guess_id]['name']
-    if verbose:
+    if verbose: 
         print (f"Matching: {human['name']}")
         print (f"Guessed answer {guess_name}")
 
-        print( "result:  {}\n".format(results) )
-        print( "neighbours:  {}\n".format(neighbours) )
+        print( "result:  {}".format(results) )
+        print( "neighbours:  {}".format(neighbours) )
         for nei in neighbours[0]:
             print ( list(features_data)[int(nei)]['name'] )
-        print ("")
-        print ( "human:", human )
-        print( "distance:  {}\n".format(dist) )
+        # print ("")
+        # print ( "human:", human )
+        print( "distance:  {}".format(dist) )
 
     return guess_id, guess_name, dist[0]
 
@@ -211,15 +221,20 @@ def authenticate(features_data, human_data, threshold = 100000000, check_answers
     i = 1
     for human in human_data:
         correct_answer = answers[ human['name'].split('/')[-1] ]
+        # if 's' in correct_answer:
+        #     continue
 
         guess_id, guess_name, dist = identify(human, features_data, knn_front, knn_side, scaler_front, scaler_side, vverbose)
 
+        if len(dist) > 1:
+            dist = dist[0]
+
         if (correct_answer == guess_name.split('/')[-1] or not check_answers) and dist < threshold:
-            print (f"{i}. YES {dist} {human['name']}") if vverbose else True
+            print (f"{i}. YES {dist} {human['name']}\n\n") if vverbose else True
 
             correct_guesses.append(i)
         else:
-            print (f"{i}. NO {dist} {human['name']}") if vverbose else True
+            print (f"{i}. NO {dist} {human['name']}\n\n") if vverbose else True
 
         i+=1
 
@@ -246,29 +261,45 @@ def main():
                 del features_data_far[i]
                 break
 
+    # authenticated_real = authenticate(features_data, human_data, verbose = True, vverbose=True)
+    # return
     far = {}
     frr = {}
-    for threshold in np.arange(0, 2,0.01):
-        authenticated_real = authenticate(features_data, human_data, threshold)
-        frr[threshold] = (len(human_data) - authenticated_real) / len(human_data)
+    acc = {}
+    max_correct = 0
+    max_threshold = None
+    for threshold in np.arange(0, 0.4,0.001):
+        authenticated_real = authenticate(features_data, human_data, threshold, check_answers= False)
+        frr[threshold] = (len(human_data) - authenticated_real) / len(human_data) * 100
 
         authenticated_false = authenticate(features_data_far, human_data, threshold, check_answers = False)
-        far[threshold] = authenticated_false / len(human_data)
+        far[threshold] = authenticated_false / len(human_data) * 100
+
+        correct = authenticated_real + (len(human_data) - authenticated_false)
+        if max_correct < correct:
+            max_correct = correct
+            max_threshold = threshold
+
+        acc[threshold] = correct / (len(human_data)*2) * 100
 
     x_frr, y_frr = zip(*sorted(frr.items()))
     x_far, y_far = zip(*sorted(far.items()))
+    x_acc, y_acc = zip(*sorted(acc.items()))
 
+    authenticate(features_data, human_data, threshold=max_threshold, verbose = True)
     idx = np.argwhere( np.diff(np.sign( np.array(y_frr) - np.array(y_far) )) ).flatten()
-    if len(idx) > 0:
-        idx = idx[0]
-        authenticated_real = authenticate(features_data, human_data, x_frr[idx], verbose = True)
-        print (f"EER = {round(y_far[idx]*100,2)}%")
-    else:
-        print("No intersection")
+    id = idx[1]
+    pyplot.plot(x_frr[id], y_frr[id], 'go')
+    print (f"EER = {round(y_frr[id],2)}%")
+    authenticate(features_data, human_data, threshold=x_far[id], verbose = True)
+    authenticate(features_data, human_data, verbose = True)
 
+    pyplot.plot(x_acc, y_acc, 'y', label='Accuracy')
     pyplot.plot(x_frr, y_frr, 'b', label='FRR')
     pyplot.plot(x_far, y_far, 'r', label='FAR')
-    pyplot.yticks(np.arange(0,1.1,0.1))
+    pyplot.ylabel('Percentage (%)')
+    pyplot.xlabel('Threshold value')
+    pyplot.yticks(np.arange(0,101,5))
     pyplot.legend()
     pyplot.grid()
     pyplot.show()
