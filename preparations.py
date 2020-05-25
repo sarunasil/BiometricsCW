@@ -37,7 +37,7 @@ def get_person(filename):
     """extracts person from the background
 
     Taken from Pytorch examples:
-    https://pytorch.org/tutorials/beginner/pytorch_with_examples.html
+    https://pytorch.org/hub/pytorch_vision_deeplabv3_resnet101/
 
     Arguments:
         filename {String} -- person picture filename
@@ -529,7 +529,7 @@ def prepare(img_names, export_filename=None):
         measurements = get_measurements(contour[0][0][0], mes_dots_img, body_parts, orientation)
 
 
-        # display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], title='prep main display')
+        display_sidebyside([initial_img, cv2.cvtColor(person_mask, cv2.COLOR_GRAY2BGR), pose_img, cv2.cvtColor(mes_dots_img, cv2.COLOR_GRAY2BGR)], title='prep main display')
         data = {
             'name':img_name,
             'initial_img':initial_img,
